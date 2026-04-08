@@ -810,10 +810,42 @@ Training is the most expensive task (~3 minutes, holds the SQLite lock). If `pre
 |---|---|
 | Producer publishes invalid trade | Routed to `crypto-prices-dlq`, logged as `[CONTRACT VIOLATION]` |
 | Producer publishes invalid orderbook | Routed to `crypto-orderbook-dlq`, logged as `[CONTRACT VIOLATION]` |
-| Consumer reads invalid message | Record skipped, not written to S3, logged |
+| Consumer reads invalid message | Routed to `crypto-prices-dlq` / `crypto-orderbook-dlq` — preserved for inspection, not written to S3 |
 | Merged layer empty after merge_raw | `check_merged_data` raises `ValueError` — DAG fails, join does not run |
 | Feature column missing in parquet | `check_features_data` raises `ValueError` — DAG fails, downstream tasks do not run |
 | Training data empty or tiny | `check_training_data` raises `ValueError` — `train_lstm` does not run |
+
+The DLQ consumers (`consumer-prices-dlq`, `consumer-orderbook-dlq`) pick up everything routed to the dead-letter topics and write it to `s3://<bucket>/errors/producer/` for later inspection or replay.
+
+#### Testing contract violations manually
+
+Use these commands to inject bad messages and watch the DLQ catch them:
+
+```bash
+# Bad symbol — not in {BTCUSDT, ETHUSDT, SOLUSDT}
+echo '{"symbol": "XYZUSDT", "price": 100.0, "size": 0.5, "timestamp": 1775667646272, "trade_id": 9999}' | \
+  docker exec -i stock-pipeline-kafka-1 kafka-console-producer \
+  --bootstrap-server localhost:9092 --topic crypto-prices
+
+# Negative price
+echo '{"symbol": "BTCUSDT", "price": -50.0, "size": 0.5, "timestamp": 1775667646272, "trade_id": 9998}' | \
+  docker exec -i stock-pipeline-kafka-1 kafka-console-producer \
+  --bootstrap-server localhost:9092 --topic crypto-prices
+
+# Bad timestamp (too old — not in milliseconds)
+echo '{"symbol": "BTCUSDT", "price": 71000.0, "size": 0.5, "timestamp": 999, "trade_id": 9997}' | \
+  docker exec -i stock-pipeline-kafka-1 kafka-console-producer \
+  --bootstrap-server localhost:9092 --topic crypto-prices
+```
+
+Then watch the consumer catch and route them:
+```bash
+# Consumer logs — should show [CONTRACT VIOLATION] → routing to crypto-prices-dlq
+docker logs stock-pipeline-consumer-prices-1 2>&1 | grep "CONTRACT"
+
+# DLQ consumer logs — should show the batch written to S3 errors/
+docker logs stock-pipeline-consumer-prices-dlq-1 2>&1 | grep "Written"
+```
 
 ---
 
