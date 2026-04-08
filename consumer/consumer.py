@@ -76,7 +76,7 @@ import boto3
 import logging
 import os
 import time
-from kafka import KafkaConsumer
+from kafka import KafkaConsumer, KafkaProducer
 from pydantic import ValidationError
 from datetime import datetime, timezone
 
@@ -104,10 +104,16 @@ KAFKA_BOOTSTRAP_SERVERS = config["KAFKA_BOOTSTRAP_SERVERS"]
 S3_BUCKET = config["S3_BUCKET"]
 
 TOPIC = os.environ["KAFKA_TOPIC"]
+DLQ_TOPIC = TOPIC + "-dlq"
 BATCH_SIZE = 1000
 BATCH_INTERVAL = 60
 
 s3 = boto3.client("s3", region_name=os.environ["AWS_DEFAULT_REGION"])
+
+dlq_producer = KafkaProducer(
+    bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+    value_serializer=lambda v: json.dumps(v).encode("utf-8"),
+)
 
 
 def write_batch_to_s3(topic: str, batch: list):
@@ -149,7 +155,13 @@ def run_consumer():
             try:
                 contract(**record)
             except ValidationError as e:
-                logger.error(f"[CONTRACT VIOLATION] {TOPIC}: {e} — skipping record")
+                logger.error(f"[CONTRACT VIOLATION] {TOPIC}: {e} — routing to {DLQ_TOPIC}")
+                dlq_producer.send(DLQ_TOPIC, value={
+                    "error": str(e),
+                    "topic": TOPIC,
+                    "raw": record,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
                 continue
         batch.append(record)
         time_elapsed = time.time() - last_write_time
