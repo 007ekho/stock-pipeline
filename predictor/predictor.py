@@ -1,4 +1,5 @@
 import json
+import os
 import boto3
 import logging
 import numpy as np
@@ -27,16 +28,16 @@ BUFFER_SIZE = SEQUENCE_LENGTH + 10  # extra room for lag computation
 
 
 def get_secret(secret_name: str) -> dict:
-    client = boto3.client("secretsmanager", region_name="eu-north-1")
+    client = boto3.client("secretsmanager", region_name=os.environ["AWS_DEFAULT_REGION"])
     response = client.get_secret_value(SecretId=secret_name)
     return json.loads(response["SecretString"])
 
 
-config = get_secret("stock-pipeline/producer")
+config = get_secret(os.environ["SECRET_PRODUCER"])
 KAFKA_BOOTSTRAP_SERVERS = config["KAFKA_BOOTSTRAP_SERVERS"]
 
-s3 = boto3.client("s3", region_name="eu-north-1")
-s3_config = get_secret("stock-pipeline/spark")
+s3 = boto3.client("s3", region_name=os.environ["AWS_DEFAULT_REGION"])
+s3_config = get_secret(os.environ["SECRET_SPARK"])
 S3_BUCKET = s3_config["S3_BUCKET"]
 
 

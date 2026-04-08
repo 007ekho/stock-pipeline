@@ -83,12 +83,12 @@ logger = logging.getLogger(__name__)
 
 
 def get_secret(secret_name: str) -> dict:
-    client = boto3.client("secretsmanager", region_name="eu-north-1")
+    client = boto3.client("secretsmanager", region_name=os.environ["AWS_DEFAULT_REGION"])
     response = client.get_secret_value(SecretId=secret_name)
     return json.loads(response["SecretString"])
 
 
-config = get_secret("stock-pipeline/consumer")
+config = get_secret(os.environ["SECRET_CONSUMER"])
 KAFKA_BOOTSTRAP_SERVERS = config["KAFKA_BOOTSTRAP_SERVERS"]
 S3_BUCKET = config["S3_BUCKET"]
 
@@ -96,7 +96,7 @@ TOPIC = os.environ["KAFKA_TOPIC"]
 BATCH_SIZE = 1000
 BATCH_INTERVAL = 60
 
-s3 = boto3.client("s3", region_name="eu-north-1")
+s3 = boto3.client("s3", region_name=os.environ["AWS_DEFAULT_REGION"])
 
 
 def write_batch_to_s3(topic: str, batch: list):

@@ -213,6 +213,7 @@
 
 import boto3
 import json
+import os
 import numpy as np
 import pandas as pd
 import logging
@@ -230,14 +231,14 @@ logger = logging.getLogger(__name__)
 
 
 def get_secret(secret_name: str) -> dict:
-    client = boto3.client("secretsmanager", region_name="eu-north-1")
+    client = boto3.client("secretsmanager", region_name=os.environ["AWS_DEFAULT_REGION"])
     response = client.get_secret_value(SecretId=secret_name)
     return json.loads(response["SecretString"])
 
 
-config = get_secret("stock-pipeline/ml")
+config = get_secret(os.environ["SECRET_ML"])
 S3_BUCKET = config["S3_BUCKET"]
-s3 = boto3.client("s3", region_name="eu-north-1")
+s3 = boto3.client("s3", region_name=os.environ["AWS_DEFAULT_REGION"])
 
 SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
 SEQUENCE_LENGTH = 60

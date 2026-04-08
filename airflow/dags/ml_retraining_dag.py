@@ -18,15 +18,15 @@ default_args = {
 
 
 def get_secret(secret_name: str) -> dict:
-    client = boto3.client("secretsmanager", region_name="eu-north-1")
+    client = boto3.client("secretsmanager", region_name=os.environ["AWS_DEFAULT_REGION"])
     response = client.get_secret_value(SecretId=secret_name)
     return json.loads(response["SecretString"])
 
 
 def validate_processed_data(**context):
     """Check that processed data exists for last 90 days."""
-    config = get_secret("stock-pipeline/airflow")
-    s3 = boto3.client("s3", region_name="eu-north-1")
+    config = get_secret(os.environ["SECRET_AIRFLOW"])
+    s3 = boto3.client("s3", region_name=os.environ["AWS_DEFAULT_REGION"])
     bucket = config["S3_BUCKET"]
 
     response = s3.list_objects_v2(
@@ -83,7 +83,7 @@ with DAG(
         task_id="train_lstm",
         image="stock-pipeline-ml",
         command="python train.py",
-        environment={"AWS_DEFAULT_REGION": "eu-north-1"},
+        environment={"AWS_DEFAULT_REGION": os.environ["AWS_DEFAULT_REGION"], "SECRET_ML": os.environ["SECRET_ML"]},
         mounts=[
             Mount(
                 source=f"{os.environ['HOST_HOME']}/.aws",

@@ -17,7 +17,7 @@
 # parser.add_argument("--date", required=True)
 # args = parser.parse_args()
 
-# config = get_secret("stock-pipeline/spark")
+# config = get_secret(os.environ["SECRET_SPARK"])
 # S3_BUCKET = config["S3_BUCKET"]
 # year, month, day = args.date.split("-")
 
@@ -46,10 +46,11 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, count, isnan, when
 import argparse
 import json
+import os
 import boto3
 
 def get_secret(secret_name: str) -> dict:
-    client = boto3.client("secretsmanager", region_name="eu-north-1")
+    client = boto3.client("secretsmanager", region_name=os.environ["AWS_DEFAULT_REGION"])
     response = client.get_secret_value(SecretId=secret_name)
     return json.loads(response["SecretString"])
 
@@ -70,7 +71,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--date", required=True)
 args = parser.parse_args()
 
-config = get_secret("stock-pipeline/spark")
+config = get_secret(os.environ["SECRET_SPARK"])
 S3_BUCKET = config["S3_BUCKET"]
 year, month, day = args.date.split("-")
 

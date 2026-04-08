@@ -13,7 +13,7 @@
 # #       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
 # #       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 # #       KAFKA_LOG_DIRS: /var/lib/kafka/data
-# #       CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qg"
+# #       CLUSTER_ID: "${KAFKA_CLUSTER_ID}"
 
 # #   producer:
 # #     build: ./producer
@@ -43,7 +43,7 @@
 #       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
 #       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 #       KAFKA_LOG_DIRS: /var/lib/kafka/data
-#       CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qg"
+#       CLUSTER_ID: "${KAFKA_CLUSTER_ID}"
 #     healthcheck:
 #       test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
 #       interval: 10s
@@ -141,7 +141,7 @@
 #     entrypoint: /bin/bash
 #     command: |
 #       airflow db init &&
-#       airflow users create --username admin --password admin --firstname Admin --lastname Admin --role Admin --email admin@example.com &&
+#       airflow users create --username admin --password ${AIRFLOW_ADMIN_PASSWORD} --firstname Admin --lastname Admin --role Admin --email admin@example.com &&
 #       airflow connections delete spark_default || true &&
 #       airflow connections add spark_default --conn-type spark --conn-host spark://spark-master --conn-port 7077
 #     depends_on:
@@ -213,8 +213,12 @@ x-airflow-common: &airflow-common
     - AIRFLOW__CORE__EXECUTOR=SequentialExecutor
     - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
     - AIRFLOW__CORE__LOAD_EXAMPLES=False
-    - AWS_DEFAULT_REGION=eu-north-1
+    - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
     - HOST_HOME=${HOME}
+    - SECRET_SPARK=${SECRET_SPARK}
+    - SECRET_PRODUCER=${SECRET_PRODUCER}
+    - SECRET_AIRFLOW=${SECRET_AIRFLOW}
+    - SECRET_ML=${SECRET_ML}
   volumes:
     - airflow-data:/opt/airflow
     - ./airflow/dags:/opt/airflow/dags
@@ -240,7 +244,7 @@ services:
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_LOG_DIRS: /var/lib/kafka/data
-      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qg"
+      CLUSTER_ID: "${KAFKA_CLUSTER_ID}"
     volumes:
       - kafka-data:/var/lib/kafka/data
     healthcheck:
@@ -256,7 +260,8 @@ services:
       kafka:
         condition: service_healthy
     environment:
-      - AWS_DEFAULT_REGION=eu-north-1
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+      - POLYGON_API_KEY=${POLYGON_API_KEY}
     volumes:
       - ~/.aws:/root/.aws:ro
 
@@ -266,7 +271,8 @@ services:
       kafka:
         condition: service_healthy
     environment:
-      - AWS_DEFAULT_REGION=eu-north-1
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+      - POLYGON_API_KEY=${POLYGON_API_KEY}
     volumes:
       - ~/.aws:/root/.aws:ro
 
@@ -276,7 +282,8 @@ services:
       kafka:
         condition: service_healthy
     environment:
-      - AWS_DEFAULT_REGION=eu-north-1
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+      - SECRET_CONSUMER=${SECRET_CONSUMER}
       - KAFKA_TOPIC=crypto-prices
     volumes:
       - ~/.aws:/root/.aws:ro
@@ -287,7 +294,8 @@ services:
       kafka:
         condition: service_healthy
     environment:
-      - AWS_DEFAULT_REGION=eu-north-1
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+      - SECRET_CONSUMER=${SECRET_CONSUMER}
       - KAFKA_TOPIC=crypto-orderbook
     volumes:
       - ~/.aws:/root/.aws:ro
@@ -298,7 +306,8 @@ services:
       kafka:
         condition: service_healthy
     environment:
-      - AWS_DEFAULT_REGION=eu-north-1
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+      - SECRET_CONSUMER=${SECRET_CONSUMER}
       - KAFKA_TOPIC=crypto-prices-dlq
     volumes:
       - ~/.aws:/root/.aws:ro
@@ -309,7 +318,8 @@ services:
       kafka:
         condition: service_healthy
     environment:
-      - AWS_DEFAULT_REGION=eu-north-1
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+      - SECRET_CONSUMER=${SECRET_CONSUMER}
       - KAFKA_TOPIC=crypto-orderbook-dlq
     volumes:
       - ~/.aws:/root/.aws:ro
@@ -356,7 +366,7 @@ services:
     entrypoint: /bin/bash
     command: -c "
       airflow db init &&
-      airflow users create --username admin --password admin --firstname Admin --lastname Admin --role Admin --email admin@example.com &&
+      airflow users create --username admin --password ${AIRFLOW_ADMIN_PASSWORD} --firstname Admin --lastname Admin --role Admin --email admin@example.com &&
       airflow connections delete spark_default || true &&
       airflow connections add spark_default --conn-type spark --conn-host spark-master --conn-port 7077
       "
@@ -365,7 +375,7 @@ services:
     environment:
       - AIRFLOW__CORE__EXECUTOR=SequentialExecutor
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
-      - AWS_DEFAULT_REGION=eu-north-1
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
     volumes:
       - airflow-data:/opt/airflow
       - ~/.aws:/home/airflow/.aws:ro
@@ -387,7 +397,9 @@ services:
       kafka:
         condition: service_healthy
     environment:
-      - AWS_DEFAULT_REGION=eu-north-1
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+      - SECRET_SPARK=${SECRET_SPARK}
+      - SECRET_PRODUCER=${SECRET_PRODUCER}
     volumes:
       - ~/.aws:/root/.aws:ro
 
@@ -405,7 +417,8 @@ services:
     build: ./ml
     image: stock-pipeline-ml
     environment:
-      - AWS_DEFAULT_REGION=eu-north-1
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+      - SECRET_ML=${SECRET_ML}
     volumes:
       - ~/.aws:/root/.aws:ro
 

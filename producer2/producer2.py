@@ -1,6 +1,7 @@
 import websocket
 from datetime import datetime, timezone
 import json
+import os
 import boto3
 from kafka import KafkaProducer
 import logging
@@ -13,12 +14,12 @@ logger = logging.getLogger(__name__)
 
 # --- Secrets ---
 def get_secret(secret_name: str) -> dict:
-    client = boto3.client("secretsmanager", region_name="eu-north-1")
+    client = boto3.client("secretsmanager", region_name=os.environ["AWS_DEFAULT_REGION"])
     response = client.get_secret_value(SecretId=secret_name)
     return json.loads(response["SecretString"])
 
 
-config = get_secret("stock-pipeline/producer")
+config = get_secret(os.environ["SECRET_PRODUCER"])
 KAFKA_BOOTSTRAP_SERVERS = config["KAFKA_BOOTSTRAP_SERVERS"]
 KAFKA_TOPIC = "crypto-orderbook"
 DLQ_TOPIC = "crypto-orderbook-dlq"

@@ -15,7 +15,7 @@
 # parser.add_argument("--days", type=int, default=90)
 # args = parser.parse_args()
 
-# config = get_secret("stock-pipeline/spark")
+# config = get_secret(os.environ["SECRET_SPARK"])
 # S3_BUCKET = config["S3_BUCKET"]
 
 # spark = SparkSession.builder \
@@ -62,10 +62,11 @@ from pyspark.sql.functions import col, count, when, isnan, min as spark_min, max
 from pyspark.sql.window import Window
 import argparse
 import json
+import os
 import boto3
 
 def get_secret(secret_name: str) -> dict:
-    client = boto3.client("secretsmanager", region_name="eu-north-1")
+    client = boto3.client("secretsmanager", region_name=os.environ["AWS_DEFAULT_REGION"])
     response = client.get_secret_value(SecretId=secret_name)
     return json.loads(response["SecretString"])
 
@@ -74,7 +75,7 @@ parser.add_argument("--days", type=int, default=90)
 parser.add_argument("--limit-per-symbol", type=int, default=10000)
 args = parser.parse_args()
 
-config = get_secret("stock-pipeline/spark")
+config = get_secret(os.environ["SECRET_SPARK"])
 S3_BUCKET = config["S3_BUCKET"]
 
 spark = SparkSession.builder \

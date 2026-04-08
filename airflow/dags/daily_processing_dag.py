@@ -2,6 +2,7 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 from datetime import datetime, timedelta
+import os
 import boto3
 import json
 
@@ -13,15 +14,15 @@ default_args = {
 }
 
 def get_secret(secret_name: str) -> dict:
-    client = boto3.client("secretsmanager", region_name="eu-north-1")
+    client = boto3.client("secretsmanager", region_name=os.environ["AWS_DEFAULT_REGION"])
     response = client.get_secret_value(SecretId=secret_name)
     return json.loads(response["SecretString"])
 
 
 def validate_raw_data(**context):
     """Check that raw S3 files arrived for today."""
-    config = get_secret("stock-pipeline/airflow")
-    s3 = boto3.client("s3", region_name="eu-north-1")
+    config = get_secret(os.environ["SECRET_AIRFLOW"])
+    s3 = boto3.client("s3", region_name=os.environ["AWS_DEFAULT_REGION"])
     bucket = config["S3_BUCKET"]
     date = context["ds"]  # YYYY-MM-DD from Airflow context
     year, month, day = date.split("-")
