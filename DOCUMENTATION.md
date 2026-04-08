@@ -6,7 +6,9 @@
 3. [Docker Command Reference](#3-docker-command-reference)
 4. [Airflow Operations](#4-airflow-operations)
 5. [AWS & S3 Reference](#5-aws--s3-reference)
-6. [Production Way Forward](#6-production-way-forward)
+6. [Environment Variables (.env)](#6-environment-variables-env)
+7. [Data Stream Reference](#7-data-stream-reference)
+8. [Production Way Forward](#8-production-way-forward)
 
 ---
 
@@ -549,7 +551,134 @@ aws s3 ls s3://<bucket>/raw/prices/ --recursive --human-readable | tail -20
 
 ---
 
-## 6. Production Way Forward
+## 6. Environment Variables (.env)
+
+All configuration is centralised in a single `.env` file at the project root. Docker Compose reads this automatically on every `docker-compose up`. The file is gitignored — only `.env.example` (with no real values) is committed to GitHub.
+
+### `.env` Structure
+
+```env
+# Polygon.io
+POLYGON_API_KEY=your_polygon_api_key_here
+
+# AWS
+AWS_DEFAULT_REGION=eu-north-1
+
+# Kafka
+KAFKA_CLUSTER_ID=MkU3OEVBNTcwNTJENDM2Qg
+
+# AWS Secrets Manager — secret paths (not the secrets themselves)
+SECRET_SPARK=stock-pipeline/spark
+SECRET_PRODUCER=stock-pipeline/producer
+SECRET_CONSUMER=stock-pipeline/consumer
+SECRET_AIRFLOW=stock-pipeline/airflow
+SECRET_ML=stock-pipeline/ml
+
+# Airflow
+AIRFLOW_ADMIN_PASSWORD=your_password_here
+```
+
+### How Each Variable Is Used
+
+| Variable | Used By | Purpose |
+|---|---|---|
+| `POLYGON_API_KEY` | producer, producer2 | Polygon.io WebSocket auth (reserved — currently using Binance) |
+| `AWS_DEFAULT_REGION` | all Python services | boto3 client region for S3 + Secrets Manager |
+| `KAFKA_CLUSTER_ID` | docker-compose (Kafka) | KRaft mode cluster identity — must be stable across restarts |
+| `SECRET_SPARK` | Spark jobs, predictor | Path to `{"S3_BUCKET": "..."}` in Secrets Manager |
+| `SECRET_PRODUCER` | producer, producer2, predictor | Path to `{"KAFKA_BOOTSTRAP_SERVERS": "..."}` in Secrets Manager |
+| `SECRET_CONSUMER` | consumer | Path to `{"KAFKA_BOOTSTRAP_SERVERS": "...", "S3_BUCKET": "..."}` in Secrets Manager |
+| `SECRET_AIRFLOW` | Airflow DAGs | Path to `{"S3_BUCKET": "..."}` in Secrets Manager |
+| `SECRET_ML` | ml/train.py | Path to `{"S3_BUCKET": "..."}` in Secrets Manager |
+| `AIRFLOW_ADMIN_PASSWORD` | airflow-init | Sets the admin UI password on first init |
+
+### What Is NOT in `.env` (stored in AWS Secrets Manager instead)
+
+The actual values fetched at runtime — `S3_BUCKET`, `KAFKA_BOOTSTRAP_SERVERS` — live in AWS Secrets Manager. `.env` only holds the **path names** to those secrets, not the secrets themselves. This means `.env` is safe to share with teammates — it contains no credentials.
+
+### Changing the AWS Region
+
+To move to a different AWS region, update only one line:
+```env
+AWS_DEFAULT_REGION=us-east-1
+```
+Every Python file and docker-compose service reads this via `os.environ["AWS_DEFAULT_REGION"]` — no code changes needed.
+
+---
+
+## 7. Data Stream Reference
+
+### The Two Binance WebSocket Streams
+
+The pipeline uses two separate Binance WebSocket streams, one per producer:
+
+#### producer — Trade Stream (`@trade`)
+```
+wss://stream.binance.com:9443/stream?streams=btcusdt@trade/ethusdt@trade/solusdt@trade
+```
+
+| Field | Description |
+|---|---|
+| `e` | Event type (`trade`) |
+| `s` | Symbol (`BTCUSDT`) |
+| `p` | Trade price |
+| `q` | Trade quantity (size) |
+| `T` | Trade timestamp (ms) |
+| `t` | Trade ID |
+
+**What it gives you:** Every single executed trade in real time. Each message = one transaction between a buyer and seller. High frequency — BTC can produce hundreds per second.
+
+**Published to:** `crypto-prices` Kafka topic
+
+---
+
+#### producer2 — Order Book Stream (`@depth20@1000ms`)
+```
+wss://stream.binance.com:9443/stream?streams=btcusdt@depth20@1000ms/ethusdt@depth20@1000ms/solusdt@depth20@1000ms
+```
+
+| Field | Description |
+|---|---|
+| `bids` | Top 20 bid levels `[[price, qty], ...]` |
+| `asks` | Top 20 ask levels `[[price, qty], ...]` |
+
+**What it gives you:** A snapshot of the order book — the top 20 prices where people are willing to buy (bids) and sell (asks), updated every 1000ms. Not individual trades — this is pending intent.
+
+**Computed fields added by producer2:**
+- `top_bid_price` / `top_ask_price` — best available prices
+- `spread` = `top_ask_price - top_bid_price` — cost of crossing the market
+- `bid_ask_ratio` = `total_bid_volume / total_ask_volume` — buy vs sell pressure
+- `total_bid_volume` / `total_ask_volume` — aggregated depth
+
+**Published to:** `crypto-orderbook` Kafka topic
+
+---
+
+### Why Two Separate Streams?
+
+| | Trade Stream | Order Book Stream |
+|---|---|---|
+| **Frequency** | Every trade (real-time) | Every 1 second (snapshot) |
+| **Nature** | What DID happen | What MIGHT happen |
+| **Signal** | Actual price, volume executed | Market depth, liquidity, intent |
+| **Use in ML** | Price lags, rolling averages, momentum | Spread, bid/ask ratio, liquidity features |
+
+Combining both gives the LSTM model **15 features** that capture both executed market activity and the underlying order book structure — neither stream alone is sufficient for a complete picture.
+
+---
+
+### Why Binance and Not Polygon.io?
+
+`POLYGON_API_KEY` is in `.env` for future use. The pipeline was originally designed for Polygon.io but **Binance was used because:**
+- Binance WebSocket is free with no API key required
+- Polygon.io crypto WebSocket requires a paid plan
+- The data format and symbols are identical for this use case
+
+To switch to Polygon.io, update the `STREAM_URL` in both producers and authenticate using `POLYGON_API_KEY`.
+
+---
+
+## 8. Production Way Forward
 
 The current setup is a working prototype. Below is the recommended path to make it production-grade.
 
