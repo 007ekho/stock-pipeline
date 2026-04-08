@@ -342,6 +342,6 @@ ml_retraining (triggered by daily_processing success)
 - All containers share one Docker bridge network (`stock-pipeline_default`)
 - AWS credentials mounted read-only from `~/.aws` into every container that needs S3 or Secrets Manager
 - `stock-pipeline/spark` secret in AWS Secrets Manager holds `S3_BUCKET`
-- `POLYGON_API_KEY` injected via environment variable into producers
+- Binance WebSocket requires no API key — free public stream
 - `HOST_HOME` env var passed to Airflow so DockerOperator can resolve the host `~/.aws` path
 - Docker socket (`/var/run/docker.sock`) mounted into Airflow containers to allow DockerOperator to spawn the ML container on the host daemon

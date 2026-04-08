@@ -261,7 +261,6 @@ services:
         condition: service_healthy
     environment:
       - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
-      - POLYGON_API_KEY=${POLYGON_API_KEY}
     volumes:
       - ~/.aws:/root/.aws:ro
 
@@ -272,7 +271,6 @@ services:
         condition: service_healthy
     environment:
       - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
-      - POLYGON_API_KEY=${POLYGON_API_KEY}
     volumes:
       - ~/.aws:/root/.aws:ro
 

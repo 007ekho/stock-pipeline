@@ -558,9 +558,6 @@ All configuration is centralised in a single `.env` file at the project root. Do
 ### `.env` Structure
 
 ```env
-# Polygon.io
-POLYGON_API_KEY=your_polygon_api_key_here
-
 # AWS
 AWS_DEFAULT_REGION=eu-north-1
 
@@ -582,7 +579,6 @@ AIRFLOW_ADMIN_PASSWORD=your_password_here
 
 | Variable | Used By | Purpose |
 |---|---|---|
-| `POLYGON_API_KEY` | producer, producer2 | Polygon.io WebSocket auth (reserved — currently using Binance) |
 | `AWS_DEFAULT_REGION` | all Python services | boto3 client region for S3 + Secrets Manager |
 | `KAFKA_CLUSTER_ID` | docker-compose (Kafka) | KRaft mode cluster identity — must be stable across restarts |
 | `SECRET_SPARK` | Spark jobs, predictor | Path to `{"S3_BUCKET": "..."}` in Secrets Manager |
@@ -667,14 +663,12 @@ Combining both gives the LSTM model **15 features** that capture both executed m
 
 ---
 
-### Why Binance and Not Polygon.io?
+### Why Binance?
 
-`POLYGON_API_KEY` is in `.env` for future use. The pipeline was originally designed for Polygon.io but **Binance was used because:**
-- Binance WebSocket is free with no API key required
-- Polygon.io crypto WebSocket requires a paid plan
-- The data format and symbols are identical for this use case
-
-To switch to Polygon.io, update the `STREAM_URL` in both producers and authenticate using `POLYGON_API_KEY`.
+- Free, no API key required
+- Highest crypto liquidity globally — tightest spreads, most trades per second
+- Stable WebSocket with reliable reconnect behaviour
+- Provides both trade and order book streams for BTC/ETH/SOL
 
 ---
 
