@@ -8,13 +8,14 @@
 5. [AWS & S3 Reference](#5-aws--s3-reference)
 6. [Environment Variables (.env)](#6-environment-variables-env)
 7. [Data Stream Reference](#7-data-stream-reference)
-8. [Production Way Forward](#8-production-way-forward)
+8. [Data Contracts](#8-data-contracts)
+9. [Production Way Forward](#9-production-way-forward)
 
 ---
 
 ## 1. Project Summary
 
-A real-time cryptocurrency data pipeline built entirely on Docker, streaming live trade and orderbook data from Polygon.io into a full ML training and inference loop.
+A real-time cryptocurrency data pipeline built entirely on Docker, streaming live trade and orderbook data from Binance into a full ML training and inference loop.
 
 ### What It Does
 - Streams live BTC, ETH, SOL trades and orderbook snapshots via WebSocket
@@ -27,7 +28,7 @@ A real-time cryptocurrency data pipeline built entirely on Docker, streaming liv
 ### Stack
 | Layer | Technology |
 |---|---|
-| Data source | Polygon.io WebSocket API |
+| Data source | Binance WebSocket API (free, no key required) |
 | Message broker | Apache Kafka 7.7.0 (KRaft, single broker) |
 | Stream persistence | Python kafka-python consumers → AWS S3 |
 | Batch processing | Apache Spark 3.x (standalone cluster, 2 workers, PySpark) |
@@ -35,6 +36,7 @@ A real-time cryptocurrency data pipeline built entirely on Docker, streaming liv
 | ML training | TensorFlow/Keras LSTM, scikit-learn MinMaxScaler |
 | Inference | Python predictor with rolling buffer |
 | Frontend | Streamlit |
+| Data contracts | Pydantic (Kafka boundary) + schema checks (Spark layers) |
 | Infrastructure | Docker Compose (16 containers) |
 | Cloud | AWS S3 (eu-north-1), AWS Secrets Manager |
 
@@ -672,7 +674,165 @@ Combining both gives the LSTM model **15 features** that capture both executed m
 
 ---
 
-## 8. Production Way Forward
+## 8. Data Contracts
+
+Data contracts enforce a formal schema agreement between producers and consumers. If a producer changes the shape of a message, the contract fails loudly rather than silently breaking downstream Spark jobs, ML training, or inference.
+
+The pipeline implements two levels of contracts:
+
+---
+
+### 8.1 Option A — Pydantic Contracts at the Kafka Boundary
+
+**Location:** `contracts/trade.py`, `contracts/orderbook.py`
+
+These contracts live in a shared `contracts/` folder copied into every producer and consumer Docker image at build time.
+
+#### `TradeEvent` — `contracts/trade.py`
+
+Validates every message before it is published to `crypto-prices`:
+
+| Field | Type | Rule |
+|---|---|---|
+| `symbol` | `str` | Must be one of `BTCUSDT`, `ETHUSDT`, `SOLUSDT` |
+| `price` | `float` | Must be > 0 |
+| `size` | `float` | Must be > 0 |
+| `timestamp` | `int` | Must be > 1,577,836,800,000 (after Jan 2020 in ms) |
+| `trade_id` | `int` | Required |
+
+#### `OrderbookEvent` — `contracts/orderbook.py`
+
+Validates every message before it is published to `crypto-orderbook`:
+
+| Field | Type | Rule |
+|---|---|---|
+| `symbol` | `str` | Must be one of `BTCUSDT`, `ETHUSDT`, `SOLUSDT` |
+| `top_bid_price` | `float` | Must be > 0 |
+| `top_ask_price` | `float` | Must be > 0 **and** > `top_bid_price` |
+| `total_bid_volume` | `float` | Must be > 0 |
+| `total_ask_volume` | `float` | Must be > 0 |
+| `bid_ask_ratio` | `float` | Must be > 0 |
+| `timestamp` | `int` | Must be > 1,577,836,800,000 ms |
+
+#### How violations are handled
+
+**Producer (publish-side):**
+```python
+try:
+    validated = TradeEvent(**raw)
+    payload = validated.model_dump()
+except ValidationError as e:
+    logger.error(f"[CONTRACT VIOLATION] TradeEvent: {e} — sending to DLQ")
+    send_with_retry(DLQ_TOPIC, {"error": str(e), "raw": raw})
+    return  # do not publish to main topic
+```
+Violations are routed to the dead-letter queue (`crypto-prices-dlq` / `crypto-orderbook-dlq`) and never reach the main topic.
+
+**Consumer (read-side):**
+```python
+contract = CONTRACTS.get(TOPIC)  # TradeEvent or OrderbookEvent
+
+for message in consumer:
+    try:
+        contract(**record)
+    except ValidationError as e:
+        logger.error(f"[CONTRACT VIOLATION] {TOPIC}: {e} — skipping record")
+        continue  # do not write to S3
+    batch.append(record)
+```
+Any message that slips past the producer (e.g. replayed from an old offset) is re-validated on the consumer side. Violations are skipped — never written to S3.
+
+#### Docker build context
+
+Because `contracts/` is shared across multiple services, the build context was changed from the individual service folder to the project root:
+
+```yaml
+producer:
+  build:
+    context: .                    # project root
+    dockerfile: producer/dockerfile
+```
+
+The Dockerfile then copies both the service code and the contracts:
+```dockerfile
+COPY producer/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY producer/producer.py .
+COPY contracts ./contracts        # shared contract models
+```
+
+---
+
+### 8.2 Option B — Data Quality Checks Between Spark Stages
+
+Schema and quality checks are wired as Airflow `PythonOperator` tasks that gate each Spark job. If a check fails, the DAG stops before the next stage runs.
+
+#### `daily_processing` DAG
+
+```
+validate_raw → merge_raw → check_merged → join_topics → feature_engineering → check_features → notify
+```
+
+| Task | What it checks |
+|---|---|
+| `check_merged_data` | Confirms `processed/merged/` has parquet files after `merge_raw` |
+| `check_features_data` | Confirms `processed/daily/` exists AND reads parquet schema via pyarrow to verify all 15 feature columns are present |
+
+**Feature column contract** — `check_features_data` will fail the DAG if any of these are missing:
+```
+symbol, price, size,
+price_lag_1, price_lag_5, price_lag_10,
+price_change, price_change_pct,
+rolling_avg_5, rolling_avg_10, rolling_stddev_10,
+volume_change, spread, bid_ask_ratio,
+total_bid_volume, total_ask_volume
+```
+
+#### `ml_retraining` DAG
+
+```
+wait_for_daily → validate → prepare_training → check_training → train_lstm → notify
+```
+
+| Task | What it checks |
+|---|---|
+| `check_training_data` | Confirms `processed/training/` has files and total size > 1 KB — prevents training on empty or corrupted output |
+
+#### Why gate before training specifically?
+
+Training is the most expensive task (~3 minutes, holds the SQLite lock). If `prepare_training` silently produced empty output, training would either crash mid-run or produce a useless model. `check_training` catches this in seconds before the LSTM starts.
+
+---
+
+### 8.3 What Happens When a Contract Is Violated
+
+| Violation point | Behaviour |
+|---|---|
+| Producer publishes invalid trade | Routed to `crypto-prices-dlq`, logged as `[CONTRACT VIOLATION]` |
+| Producer publishes invalid orderbook | Routed to `crypto-orderbook-dlq`, logged as `[CONTRACT VIOLATION]` |
+| Consumer reads invalid message | Record skipped, not written to S3, logged |
+| Merged layer empty after merge_raw | `check_merged_data` raises `ValueError` — DAG fails, join does not run |
+| Feature column missing in parquet | `check_features_data` raises `ValueError` — DAG fails, downstream tasks do not run |
+| Training data empty or tiny | `check_training_data` raises `ValueError` — `train_lstm` does not run |
+
+---
+
+### 8.4 Extending Contracts
+
+**To add a new symbol** (e.g. `SOLUSDT` → add `BNBUSDT`):
+1. Add `"BNBUSDT"` to `VALID_SYMBOLS` in both `contracts/trade.py` and `contracts/orderbook.py`
+2. Add the symbol to the Binance stream URLs in `producer/producer.py` and `producer2/producer2.py`
+3. Rebuild producer, producer2, consumer images
+
+**To add a new feature column:**
+1. Add the computation in `spark/jobs/feature_engineering.py`
+2. Add the column name to `REQUIRED_FEATURE_COLS` in `check_features_data` in `airflow/dags/daily_processing_dag.py`
+3. Add the column to `FEATURE_COLS` in `predictor/predictor.py`
+4. Retrain the model
+
+---
+
+## 9. Production Way Forward
 
 The current setup is a working prototype. Below is the recommended path to make it production-grade.
 
