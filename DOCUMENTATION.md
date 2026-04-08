@@ -870,7 +870,7 @@ The current setup is a working prototype. Below is the recommended path to make 
 
 ---
 
-### 6.1 Replace SQLite + SequentialExecutor With PostgreSQL + Celery
+### 9.1 Replace SQLite + SequentialExecutor With PostgreSQL + Celery
 
 **Current limitation:** SQLite locks under long tasks; SequentialExecutor runs one task at a time. The DAG collision between `daily_processing` and `ml_retraining` is currently mitigated with a second Spark worker, staggered schedules, `max_active_runs=1`, and an `ExternalTaskSensor` — but the underlying SQLite single-writer bottleneck remains and will resurface as more DAGs or longer tasks are added.
 
@@ -899,7 +899,7 @@ This allows parallel task execution and eliminates the database lock issue entir
 
 ---
 
-### 6.2 Add MLflow for Model Versioning and Hot-Reload
+### 9.2 Add MLflow for Model Versioning and Hot-Reload
 
 **Current limitation:** The predictor loads the latest model at startup only — a new trained model requires a container restart.
 
@@ -924,7 +924,7 @@ model = mlflow.keras.load_model(latest.source)
 
 ---
 
-### 6.3 Add Kafka Partitioning and Multiple Workers
+### 9.3 Add Kafka Partitioning and Multiple Workers
 
 **Current limitation:** Single partition per topic — only one consumer instance can read per group.
 
@@ -941,7 +941,7 @@ kafka-topics --create --topic crypto-prices \
 
 ---
 
-### 6.4 Add Grafana + Prometheus for Pipeline Monitoring
+### 9.4 Add Grafana + Prometheus for Pipeline Monitoring
 
 **Metrics to track:**
 - Kafka consumer lag per topic/group
@@ -972,7 +972,7 @@ Use the **Kafka Exporter** (`danielqsj/kafka-exporter`) and **JMX Exporter** for
 
 ---
 
-### 6.5 Replace Standalone Spark With EMR or Databricks
+### 9.5 Replace Standalone Spark With EMR or Databricks
 
 **Current limitation:** Spark runs on a single Docker host — no true distributed compute.
 
@@ -985,7 +985,7 @@ For this pipeline, EMR Serverless is the most cost-efficient path — trigger jo
 
 ---
 
-### 6.6 Move Secrets Out of Environment Variables
+### 9.6 Move Secrets Out of Environment Variables
 
 **Current:** AWS credentials mounted from `~/.aws` via Docker volume.
 
@@ -996,7 +996,7 @@ For this pipeline, EMR Serverless is the most cost-efficient path — trigger jo
 
 ---
 
-### 6.7 Add Data Quality Checks Before Training
+### 9.7 Add Data Quality Checks Before Training
 
 **Current limitation:** `prepare_training.py` drops nulls and fills with 0 — no validation that the data is sane.
 
@@ -1016,7 +1016,7 @@ Fail the Airflow DAG task if checks fail — don't train on bad data.
 
 ---
 
-### 6.8 LSTM Model Improvements for Better Predictions
+### 9.8 LSTM Model Improvements for Better Predictions
 
 **Current model:** 2 LSTM layers, 2 epochs, 10k records/symbol, next-trade price prediction.
 
@@ -1033,7 +1033,7 @@ Fail the Airflow DAG task if checks fail — don't train on bad data.
 
 ---
 
-### 6.9 Production Deployment Target
+### 9.9 Production Deployment Target
 
 For full production deployment the recommended target is:
 
