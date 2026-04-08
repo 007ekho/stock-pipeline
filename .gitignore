@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+venv/
+.venv/
+
+# AWS credentials (never commit)
+.aws/
+*.pem
+*.key
+
+# Jupyter
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+
+# Airflow
+airflow/airflow.db
+airflow/logs/
+airflow/airflow-webserver.pid
+
+# Docker
+*.log
+
+# Model artifacts (stored in S3)
+*.keras
+*.joblib
+*.h5
+
+# IDE
+.vscode/
+.idea/

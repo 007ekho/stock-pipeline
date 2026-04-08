@@ -1,0 +1,24 @@
+FROM apache/airflow:2.8.1-python3.11
+
+USER root
+RUN apt-get update && \
+    apt-get install -y gcc default-jdk wget curl && \
+    apt-get clean && \
+    wget -q https://archive.apache.org/dist/spark/spark-3.5.1/spark-3.5.1-bin-hadoop3.tgz && \
+    tar -xzf spark-3.5.1-bin-hadoop3.tgz -C /opt/ && \
+    mv /opt/spark-3.5.1-bin-hadoop3 /opt/spark && \
+    rm spark-3.5.1-bin-hadoop3.tgz && \
+    curl -fL -o /opt/spark/jars/hadoop-aws-3.3.4.jar \
+        https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar && \
+    curl -fL -o /opt/spark/jars/aws-java-sdk-bundle-1.12.262.jar \
+        https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar
+
+ENV JAVA_HOME=/usr/lib/jvm/default-java
+ENV SPARK_HOME=/opt/spark
+ENV PATH=$PATH:$SPARK_HOME/bin
+
+USER airflow
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY dags/ /opt/airflow/dags/

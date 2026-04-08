@@ -1,0 +1,6 @@
+tensorflow
+scikit-learn
+numpy
+boto3
+kafka-python
+joblib

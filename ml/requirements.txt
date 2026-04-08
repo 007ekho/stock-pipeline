@@ -1,0 +1,7 @@
+tensorflow
+scikit-learn
+pandas
+numpy
+boto3
+pyarrow
+joblib
