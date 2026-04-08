@@ -255,27 +255,35 @@ services:
       start_period: 30s
 
   producer:
-    build: ./producer
+    build:
+      context: .
+      dockerfile: producer/dockerfile
     depends_on:
       kafka:
         condition: service_healthy
     environment:
       - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+      - SECRET_PRODUCER=${SECRET_PRODUCER}
     volumes:
       - ~/.aws:/root/.aws:ro
 
   producer2:
-    build: ./producer2
+    build:
+      context: .
+      dockerfile: producer2/dockerfile
     depends_on:
       kafka:
         condition: service_healthy
     environment:
       - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+      - SECRET_PRODUCER=${SECRET_PRODUCER}
     volumes:
       - ~/.aws:/root/.aws:ro
 
   consumer-prices:
-    build: ./consumer
+    build:
+      context: .
+      dockerfile: consumer/dockerfile
     depends_on:
       kafka:
         condition: service_healthy
@@ -287,7 +295,9 @@ services:
       - ~/.aws:/root/.aws:ro
 
   consumer-orderbook:
-    build: ./consumer
+    build:
+      context: .
+      dockerfile: consumer/dockerfile
     depends_on:
       kafka:
         condition: service_healthy
@@ -299,7 +309,9 @@ services:
       - ~/.aws:/root/.aws:ro
 
   consumer-prices-dlq:
-    build: ./consumer
+    build:
+      context: .
+      dockerfile: consumer/dockerfile
     depends_on:
       kafka:
         condition: service_healthy
@@ -311,7 +323,9 @@ services:
       - ~/.aws:/root/.aws:ro
 
   consumer-orderbook-dlq:
-    build: ./consumer
+    build:
+      context: .
+      dockerfile: consumer/dockerfile
     depends_on:
       kafka:
         condition: service_healthy

@@ -71,12 +71,23 @@
 
 
 import json
+import sys
 import boto3
 import logging
 import os
 import time
 from kafka import KafkaConsumer
+from pydantic import ValidationError
 from datetime import datetime, timezone
+
+sys.path.insert(0, "/app")
+from contracts.trade import TradeEvent
+from contracts.orderbook import OrderbookEvent
+
+CONTRACTS = {
+    "crypto-prices": TradeEvent,
+    "crypto-orderbook": OrderbookEvent,
+}
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -130,8 +141,17 @@ def run_consumer():
     batch = []
     last_write_time = time.time()
 
+    contract = CONTRACTS.get(TOPIC)
+
     for message in consumer:
-        batch.append(message.value)
+        record = message.value
+        if contract:
+            try:
+                contract(**record)
+            except ValidationError as e:
+                logger.error(f"[CONTRACT VIOLATION] {TOPIC}: {e} — skipping record")
+                continue
+        batch.append(record)
         time_elapsed = time.time() - last_write_time
         should_write = len(batch) >= BATCH_SIZE or time_elapsed >= BATCH_INTERVAL
 

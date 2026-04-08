@@ -2,11 +2,16 @@ import websocket
 from datetime import datetime, timezone
 import json
 import os
+import sys
 import boto3
 from kafka import KafkaProducer
+from pydantic import ValidationError
 import logging
 import time
 from datetime import datetime
+
+sys.path.insert(0, "/app")
+from contracts.orderbook import OrderbookEvent
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -73,7 +78,7 @@ def on_message(ws, message):
             logger.warning(f"Empty order book for {symbol} — skipping")
             return
 
-        payload = {
+        raw = {
             "symbol": symbol,
             "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
             "top_bid_price": float(bids[0][0]),
@@ -86,6 +91,14 @@ def on_message(ws, message):
             "total_ask_volume": sum(float(q) for _, q in asks),
             "bid_ask_ratio": sum(float(q) for _, q in bids) / sum(float(q) for _, q in asks),
         }
+
+        try:
+            validated = OrderbookEvent(**raw)
+            payload = validated.model_dump()
+        except ValidationError as e:
+            logger.error(f"[CONTRACT VIOLATION] OrderbookEvent: {e} — sending to DLQ")
+            send_with_retry(DLQ_TOPIC, {"error": str(e), "raw": raw})
+            return
 
         logger.info(f"Orderbook: {symbol} | top bid: {payload['top_bid_price']} | top ask: {payload['top_ask_price']} | ratio: {payload['bid_ask_ratio']:.3f}")
         send_with_retry(KAFKA_TOPIC, payload)

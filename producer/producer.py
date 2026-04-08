@@ -10,8 +10,7 @@
 
 # # --- Secrets ---
 # def get_secret(secret_name: str) -> dict:
-#     import os
-    client = boto3.client("secretsmanager", region_name=os.environ["AWS_DEFAULT_REGION"])
+#     client = boto3.client("secretsmanager", region_name=os.environ["AWS_DEFAULT_REGION"])
 #     response = client.get_secret_value(SecretId=secret_name)
 #     return json.loads(response["SecretString"])
 
@@ -75,11 +74,16 @@
 import websocket
 import json
 import os
+import sys
 import boto3
 from kafka import KafkaProducer
+from pydantic import ValidationError
 import logging
 import time
 from datetime import datetime
+
+sys.path.insert(0, "/app")
+from contracts.trade import TradeEvent
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -138,13 +142,20 @@ def on_message(ws, message):
         event = data.get("data", {})
 
         if event.get("e") == "trade":
-            payload = {
+            raw = {
                 "symbol": event.get("s"),
                 "price": float(event.get("p")),
                 "size": float(event.get("q")),
                 "timestamp": event.get("T"),
                 "trade_id": event.get("t"),
             }
+            try:
+                validated = TradeEvent(**raw)
+                payload = validated.model_dump()
+            except ValidationError as e:
+                logger.error(f"[CONTRACT VIOLATION] TradeEvent: {e} — sending to DLQ")
+                send_with_retry(DLQ_TOPIC, {"error": str(e), "raw": raw})
+                return
             logger.info(f"Trade: {payload}")
             send_with_retry(KAFKA_TOPIC, payload)
 

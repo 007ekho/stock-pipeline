@@ -39,6 +39,26 @@ def validate_processed_data(**context):
     print(f"Found {count} processed files for training")
 
 
+def check_training_data(**context):
+    """Validate training data — files exist and are non-trivial in size."""
+    import boto3
+    import os
+    config = get_secret(os.environ["SECRET_AIRFLOW"])
+    s3 = boto3.client("s3", region_name=os.environ["AWS_DEFAULT_REGION"])
+    bucket = config["S3_BUCKET"]
+
+    response = s3.list_objects_v2(Bucket=bucket, Prefix="processed/training/")
+    count = response.get("KeyCount", 0)
+    if count == 0:
+        raise ValueError("No training parquet files found — prepare_training may have failed")
+
+    total_size = sum(obj["Size"] for obj in response.get("Contents", []))
+    if total_size < 1024:
+        raise ValueError(f"Training data suspiciously small: {total_size} bytes")
+
+    print(f"[CONTRACT] training layer: {count} files, {total_size / 1024:.1f} KB ✓")
+
+
 def notify_success(**context):
     print(f"ML retraining completed successfully at {context['ds']}")
 
@@ -83,7 +103,10 @@ with DAG(
         task_id="train_lstm",
         image="stock-pipeline-ml",
         command="python train.py",
-        environment={"AWS_DEFAULT_REGION": os.environ["AWS_DEFAULT_REGION"], "SECRET_ML": os.environ["SECRET_ML"]},
+        environment={
+            "AWS_DEFAULT_REGION": os.environ["AWS_DEFAULT_REGION"],
+            "SECRET_ML": os.environ["SECRET_ML"],
+        },
         mounts=[
             Mount(
                 source=f"{os.environ['HOST_HOME']}/.aws",
@@ -96,9 +119,15 @@ with DAG(
         docker_url="unix://var/run/docker.sock",
     )
 
+    check_training = PythonOperator(
+        task_id="check_training_data",
+        python_callable=check_training_data,
+    )
+
     notify = PythonOperator(
         task_id="notify_success",
         python_callable=notify_success,
     )
 
-    wait_for_daily >> validate >> prepare >> train >> notify
+    # check_training gates training — won't train on bad/empty data
+    wait_for_daily >> validate >> prepare >> check_training >> train >> notify
